@@ -1,0 +1,13 @@
+{
+  "name": "uni-tv",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Watch, curate, filter and record channels from an M3U playlist",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

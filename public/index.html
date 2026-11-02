@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Uni TV</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>UNI<span class="thin">TV</span></div>
+    <nav class="tabs">
+      <button data-view="curated" class="active">Curated</button>
+      <button data-view="browse">All channels</button>
+      <button data-view="recordings">Recordings <span id="recCount" class="pill hidden"></span></button>
+    </nav>
+    <div class="search">
+      <input id="search" type="search" placeholder="Search channels…  ( / )" autocomplete="off" />
+    </div>
+    <button id="scanBtn" class="ghost" title="Check which streams are currently live">Scan streams</button>
+  </header>
+
+  <main class="layout">
+    <section id="content">
+      <div id="view-curated" class="view"></div>
+
+      <div id="view-browse" class="view hidden">
+        <aside class="filters">
+          <div class="fgroup">
+            <h4>Status</h4>
+            <div class="seg" data-filter="status">
+              <button data-v="any" class="active">Any</button>
+              <button data-v="notdead">Hide dead</button>
+              <button data-v="live">Live only</button>
+            </div>
+          </div>
+          <div class="fgroup">
+            <h4>Country</h4>
+            <select id="countrySel"></select>
+          </div>
+          <div class="fgroup">
+            <h4>Language</h4>
+            <select id="langSel"></select>
+          </div>
+          <div class="fgroup">
+            <h4>Quality</h4>
+            <div class="seg" data-filter="quality">
+              <button data-v="any" class="active">Any</button>
+              <button data-v="sd">SD</button>
+              <button data-v="hd">720p+</button>
+              <button data-v="fhd">1080p+</button>
+            </div>
+          </div>
+          <div class="fgroup">
+            <h4>Options</h4>
+            <label class="check"><input type="checkbox" data-opt="favOnly" /> Favorites only</label>
+            <label class="check"><input type="checkbox" data-opt="merge" checked /> Merge duplicates</label>
+            <label class="check"><input type="checkbox" data-opt="hideGeo" /> Hide geo‑blocked</label>
+            <label class="check"><input type="checkbox" data-opt="hidePart" /> Hide part‑time (not 24/7)</label>
+            <label class="check"><input type="checkbox" data-opt="hideUnsupported" checked /> Hide unplayable (RTMP/MMS)</label>
+          </div>
+          <div class="fgroup">
+            <h4>Sort</h4>
+            <select id="sort">
+              <option value="name">Name</option>
+              <option value="quality">Quality</option>
+              <option value="status">Live first</option>
+            </select>
+          </div>
+          <div class="fgroup">
+            <h4>Categories <button id="clearCats" class="link">clear</button></h4>
+            <div id="catChips" class="chips"></div>
+          </div>
+        </aside>
+        <div class="listwrap">
+          <div class="listhead"><span id="resultCount"></span></div>
+          <div id="list" class="vlist"><div class="vspacer"></div></div>
+        </div>
+      </div>
+
+      <div id="view-recordings" class="view hidden"></div>
+    </section>
+
+    <aside id="player" class="hidden">
+      <div class="screen">
+        <video id="video" playsinline autoplay></video>
+        <div id="overlay" class="overlay hidden"></div>
+        <div id="recBadge" class="recbadge hidden"><span class="blink"></span><span id="recText">REC</span></div>
+      </div>
+      <div class="pinfo">
+        <div class="ptitle">
+          <div>
+            <h2 id="pName"></h2>
+            <div id="pMeta" class="meta"></div>
+          </div>
+          <button id="pClose" class="icon" title="Close (Esc)">✕</button>
+        </div>
+        <div id="pVariants" class="variants"></div>
+        <div class="controls">
+          <button id="pPrev" class="icon" title="Previous channel (↑)">⏮</button>
+          <button id="pNext" class="icon" title="Next channel (↓)">⏭</button>
+          <button id="pFav" class="icon" title="Favorite">☆</button>
+          <select id="pQuality" title="Quality"></select>
+          <span class="spacer"></span>
+          <button id="pPip" class="icon" title="Picture in picture">⧉</button>
+          <button id="pFull" class="icon" title="Fullscreen (F)">⛶</button>
+        </div>
+        <div class="recpanel">
+          <div class="rechead">Record</div>
+          <div class="recrow">
+            <button id="recVideo" class="rec"><span class="rdot"></span>Video</button>
+            <button id="recAudio" class="rec"><span class="rdot"></span>Audio only</button>
+            <select id="recLimit" title="Stop automatically after">
+              <option value="0">Until I stop</option>
+              <option value="5">5 min</option>
+              <option value="15">15 min</option>
+              <option value="30">30 min</option>
+              <option value="60">1 hour</option>
+              <option value="120">2 hours</option>
+            </select>
+          </div>
+          <div id="recStatus" class="recstatus"></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
