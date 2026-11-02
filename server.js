@@ -10,6 +10,7 @@ const os = require('os');
 const { parse } = require('./playlist');
 const { enrich } = require('./enrich');
 const { createSocial } = require('./social');
+const { createAuth } = require('./auth');
 
 const PORT = parseInt(process.env.PORT || '4321', 10);
 // Set LAN=1 to let other devices on your network open shared links.
@@ -240,7 +241,9 @@ async function startScan(force) {
 }
 
 // ---------- Comments & chat ----------
-const social = createSocial(DATA_DIR, (id) => byId.get(id));
+const auth = createAuth(DATA_DIR);
+const GUEST_POSTING = /^(1|true|yes)$/i.test(process.env.GUEST_POSTING || '');
+const social = createSocial(DATA_DIR, (id) => byId.get(id), { isUsername: auth.isUsername, guestPosting: GUEST_POSTING });
 
 // ---------- Recordings ----------
 const activeRecs = new Map(); // id -> { file, stream }
@@ -319,6 +322,20 @@ const server = http.createServer(async (req, res) => {
     }
     if (p.startsWith('/p/')) return await handleProxy(req, res, req.url.slice(3));
 
+    // Block cross-site requests from changing anything (CSRF): the Origin must be this server.
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const origin = req.headers.origin;
+      if (origin && origin !== 'null') {
+        let host = '';
+        try { host = new URL(origin).host; } catch {}
+        if (host !== req.headers.host) return json(res, { error: 'Cross-site request blocked' }, 403);
+      } else if (p.startsWith('/api/auth/')) {
+        return json(res, { error: 'Cross-site request blocked' }, 403);
+      }
+    }
+    const user = p.startsWith('/api/') ? auth.userFrom(req) : null;
+    if (p.startsWith('/api/') && (await auth.handle(req, res, p, url, { json, readJson, user }))) return;
+
     if (p === '/api/channels') {
       await enriched;
       const list = channels.map((c) => ({
@@ -330,7 +347,7 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/health') return json(res, health);
 
-    if (p.startsWith('/api/') && (await social.handle(req, res, p, url, { json, readJson, local }))) return;
+    if (p.startsWith('/api/') && (await social.handle(req, res, p, url, { json, readJson, local, user }))) return;
 
     if (p === '/api/info') return json(res, { lan: LAN, lanUrls: LAN ? lanUrls() : [] });
 

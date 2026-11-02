@@ -5,9 +5,9 @@
   "description": "Watch, curate, filter and record channels from an M3U playlist",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node --disable-warning=ExperimentalWarning server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13"
   }
 }

@@ -20,6 +20,7 @@
       <input id="search" type="search" placeholder="Search channels…  ( / )" autocomplete="off" />
     </div>
     <button id="scanBtn" class="ghost" title="Check which streams are currently live">Scan streams</button>
+    <button id="accountBtn" class="account">Sign in</button>
   </header>
 
   <main class="layout">
@@ -81,6 +82,8 @@
       </div>
 
       <div id="view-recordings" class="view hidden"></div>
+
+      <div id="view-account" class="view hidden"></div>
 
       <div id="view-chat" class="view hidden">
         <div class="chatmain">
@@ -179,6 +182,35 @@
       </div>
     </aside>
   </main>
+
+  <div id="authModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <form id="authForm" class="modalcard" autocomplete="on" novalidate>
+      <button type="button" class="icon mclose" id="authClose" aria-label="Close">✕</button>
+      <div class="authtabs">
+        <button type="button" data-mode="login" class="active">Sign in</button>
+        <button type="button" data-mode="signup">Create account</button>
+      </div>
+      <h2 id="authTitle">Welcome back</h2>
+      <p class="mhint" id="authHint">Sign in to chat, comment and keep your watch history. You can always watch without an account.</p>
+      <label class="field">Username
+        <input id="authUser" name="username" autocomplete="username" maxlength="20" required />
+      </label>
+      <label class="field">Password
+        <input id="authPass" name="password" type="password" autocomplete="current-password" maxlength="128" required />
+      </label>
+      <label class="field signup-only hidden">Confirm password
+        <input id="authPass2" type="password" autocomplete="new-password" maxlength="128" />
+      </label>
+      <!-- Honeypot: hidden from people, irresistible to form-filling bots -->
+      <div class="hp" aria-hidden="true">
+        <label>Website <input id="authWebsite" name="website" tabindex="-1" autocomplete="off" /></label>
+      </div>
+      <div id="turnstileBox"></div>
+      <div id="authError" class="autherr"></div>
+      <button id="authSubmit" class="primary" type="submit">Sign in</button>
+      <div id="authStatus" class="authstatus"></div>
+    </form>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
   <script src="/app.js"></script>

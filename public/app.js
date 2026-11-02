@@ -122,6 +122,7 @@ function setView(v) {
   $('#view-' + v).classList.remove('hidden');
   if (v === 'browse') renderBrowse();
   if (v === 'recordings') renderRecordings();
+  if (v === 'account') renderAccount();
   if (v === 'chat') { chatUnread = 0; updateChatDot(); ensureName(); scrollChat(true); $('#chatInput').focus(); }
 }
 
@@ -389,6 +390,7 @@ function loadScript(src) {
 
 async function play(c, fromList) {
   if (!c) return;
+  watch.flush(true);
   if (recorder.active && !confirm('A recording is in progress. Stop it and switch channel?')) return;
   if (recorder.active) await recorder.stop();
   if (fromList) state.list = fromList;
@@ -517,6 +519,7 @@ function zap(dir) {
 
 function closePlayer() {
   if (recorder.active) { toast('Stop the recording first.'); return; }
+  watch.flush(true);
   teardown();
   state.current = null;
   $('#player').classList.add('hidden');
@@ -542,19 +545,21 @@ let chatUnread = 0;
 let chatLoaded = false;
 
 function ensureName(force) {
+  if (session.user) return true;
+  if (!me.canPost) { openAuth('login', 'Sign in to join the conversation. Watching is always free without an account.'); return false; }
   if (me.name && !force) return true;
   const n = (prompt('Pick a name for comments and chat:', me.name || '') || '').trim().slice(0, 24);
   if (!n) return !!me.name;
   me.name = n;
   store.set('name', n);
-  $('#myName').textContent = n;
+  renderIdentity();
   sayHello();
   return true;
 }
 
 async function sayHello() {
   const r = await api('/api/me', { secret: me.secret, name: me.name || 'Guest', watching: state.current?.id || null }).catch(() => null);
-  if (r) { me.author = r.author; me.host = r.host; }
+  if (r) { me.author = r.author; me.host = r.host; me.canPost = r.canPost; renderIdentity(); }
 }
 
 function timeAgo(t) {
@@ -572,7 +577,7 @@ function msgHTML(m, kind) {
   return `<div class="msg${mine ? ' mine' : ''}" data-mid="${m.id}">
     <div class="av" style="background:hsl(${h} 45% 28%)">${esc(m.name.slice(0, 1).toUpperCase())}</div>
     <div class="mbody">
-      <div class="mhead"><b>${esc(m.name)}</b><span title="${new Date(m.t).toLocaleString()}">${timeAgo(m.t)}</span>${tag}
+      <div class="mhead"><b>${esc(m.name)}</b>${m.member ? '<span class="member" title="Registered account">✓</span>' : ''}<span title="${new Date(m.t).toLocaleString()}">${timeAgo(m.t)}</span>${tag}
         ${mine || me.host ? `<button class="del" data-del="${kind}" data-id="${m.id}" data-channel="${m.channel || ''}" data-room="${m.room || 'global'}">delete</button>` : ''}</div>
       <div class="mtext">${esc(m.text)}</div>
     </div></div>`;
@@ -670,7 +675,10 @@ $('#chatForm').onsubmit = async (e) => {
   if (r.error) return toast(r.error);
   input.value = '';
 };
-$('#changeName').onclick = () => ensureName(true);
+$('#changeName').onclick = () => (session.user ? setView('account') : ensureName(true));
+// Prompt guests to sign in as soon as they try to type, rather than after writing a message.
+['#chatInput', '#roomInput', '#commentInput'].forEach((sel) =>
+  $(sel).addEventListener('focus', () => { if (!session.user && !me.canPost) { $(sel).blur(); ensureName(); } }));
 
 // Tune in from a chat tag; delete own posts.
 document.addEventListener('click', async (e) => {
@@ -720,6 +728,273 @@ function connectEvents() {
   es.addEventListener('presence', (e) => { lastPresence = JSON.parse(e.data); renderOnline(lastPresence); updateViewers(); });
   // EventSource reconnects by itself; refresh state when it does.
   es.onopen = () => { sayHello(); if (chatLoaded) loadChat(); if (state.current) loadRoom(state.current); };
+}
+
+// ---------- accounts ----------
+const session = { user: null, turnstileSiteKey: null };
+me.canPost = false;
+
+function avatarStyle(name) { const h = hue(name.toLowerCase()); return `background:hsl(${h} 45% 30%)`; }
+function fmtDur(sec) {
+  sec = Math.round(sec);
+  if (sec < 60) return sec + 's';
+  const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+async function loadSession() {
+  const r = await api('/api/auth/session').catch(() => ({}));
+  session.user = r.user || null;
+  session.turnstileSiteKey = r.turnstileSiteKey || null;
+  renderIdentity();
+}
+
+function renderIdentity() {
+  const btn = $('#accountBtn');
+  const u = session.user;
+  btn.classList.toggle('in', !!u);
+  btn.innerHTML = u ? `<span class="uav" style="${avatarStyle(u.username)}">${esc(u.username[0].toUpperCase())}</span>${esc(u.username)}` : 'Sign in';
+  $('#myName').textContent = u ? u.username : me.canPost ? (me.name || 'set a name') : 'guest (sign in to chat)';
+  const ph = u || me.canPost;
+  $('#chatInput').placeholder = ph ? 'Say something…' : 'Sign in to chat…';
+  $('#roomInput').placeholder = ph ? 'Chat with everyone watching…' : 'Sign in to chat…';
+  $('#commentInput').placeholder = ph ? 'Add a comment…' : 'Sign in to comment…';
+}
+
+// After signing in/out: refresh identity everywhere so names, badges and delete buttons are right.
+async function afterAuthChange() {
+  await loadSession();
+  await sayHello();
+  if (chatLoaded) loadChat();
+  if (state.current) { loadComments(state.current); loadRoom(state.current); }
+  if (session.user) {
+    // Bring this account's recent channels into "Continue watching"
+    const h = await api('/api/history').catch(() => null);
+    if (h?.recent) {
+      const ids = [...new Set(h.recent.map((x) => x.channel_id))].filter((id) => state.byId.has(id));
+      state.recents = [...new Set([...state.recents, ...ids])].slice(0, 20);
+      store.set('recents', state.recents);
+    }
+  }
+  if (state.view === 'curated') renderCurated();
+  if (state.view === 'account') session.user ? renderAccount() : setView('curated');
+}
+
+$('#accountBtn').onclick = () => (session.user ? setView('account') : openAuth('login'));
+
+// ----- sign in / sign up modal -----
+const auth = { mode: 'login', challenge: null, worker: null, turnstileToken: null, turnstileId: null };
+
+function openAuth(mode = 'login', hint) {
+  setAuthMode(mode);
+  if (hint) $('#authHint').textContent = hint;
+  $('#authError').textContent = '';
+  $('#authStatus').textContent = '';
+  $('#authModal').classList.remove('hidden');
+  $('#authUser').focus();
+  prepareChallenge();
+  mountTurnstile();
+}
+function closeAuth() {
+  $('#authModal').classList.add('hidden');
+  auth.worker?.terminate();
+  auth.worker = null;
+  $('#authPass').value = $('#authPass2').value = '';
+}
+function setAuthMode(mode) {
+  auth.mode = mode;
+  const signup = mode === 'signup';
+  $$('.authtabs button').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
+  $$('.signup-only').forEach((el) => el.classList.toggle('hidden', !signup));
+  $('#authTitle').textContent = signup ? 'Create your account' : 'Welcome back';
+  $('#authHint').textContent = signup
+    ? 'Free. Lets you chat, comment and keep your watch history across devices. Usernames are 3–20 letters, numbers, _ . or -.'
+    : 'Sign in to chat, comment and keep your watch history. You can always watch without an account.';
+  $('#authSubmit').textContent = signup ? 'Create account' : 'Sign in';
+  $('#authPass').autocomplete = signup ? 'new-password' : 'current-password';
+  $('#authError').textContent = '';
+}
+
+// Fetch a proof-of-work challenge and start solving it in the background right away,
+// so by the time the person has typed their details it's usually done.
+function prepareChallenge() {
+  auth.worker?.terminate();
+  const ch = { solved: null };
+  auth.challenge = ch;
+  ch.promise = (async () => {
+    const c = await api('/api/auth/challenge');
+    if (c.error) throw new Error(c.error);
+    Object.assign(ch, c);
+    const nonce = await new Promise((resolve, reject) => {
+      const w = new Worker('/pow-worker.js');
+      auth.worker = w;
+      w.onmessage = (e) => { if (e.data.nonce != null) { resolve(e.data.nonce); w.terminate(); } };
+      w.onerror = reject;
+      w.postMessage({ payload: c.payload, bits: c.bits });
+    });
+    ch.solved = { payload: c.payload, sig: c.sig, nonce };
+    return ch.solved;
+  })();
+  ch.promise.catch(() => {});
+}
+
+async function mountTurnstile() {
+  if (!session.turnstileSiteKey) return;
+  if (!window.turnstile) await loadScript('https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit').catch(() => {});
+  if (!window.turnstile) return;
+  if (auth.turnstileId != null) { turnstile.reset(auth.turnstileId); auth.turnstileToken = null; return; }
+  auth.turnstileId = turnstile.render('#turnstileBox', {
+    sitekey: session.turnstileSiteKey, theme: 'dark',
+    callback: (t) => (auth.turnstileToken = t), 'expired-callback': () => (auth.turnstileToken = null),
+  });
+}
+
+$$('.authtabs button').forEach((b) => (b.onclick = () => setAuthMode(b.dataset.mode)));
+$('#authClose').onclick = closeAuth;
+$('#authModal').addEventListener('mousedown', (e) => { if (e.target.id === 'authModal') closeAuth(); });
+$('#authModal').addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAuth(); });
+
+$('#authForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const err = $('#authError'), status = $('#authStatus'), btn = $('#authSubmit');
+  const username = $('#authUser').value.trim();
+  const password = $('#authPass').value;
+  const signup = auth.mode === 'signup';
+  err.textContent = '';
+  if (signup) {
+    if (!/^[A-Za-z0-9_.-]{3,20}$/.test(username)) return (err.textContent = 'Usernames are 3–20 characters: letters, numbers, _ . -');
+    if (password.length < 8) return (err.textContent = 'Password must be at least 8 characters.');
+    if (password !== $('#authPass2').value) return (err.textContent = 'Passwords don’t match.');
+  } else if (!username || !password) return (err.textContent = 'Enter your username and password.');
+  if (session.turnstileSiteKey && !auth.turnstileToken) return (err.textContent = 'Please complete the human check.');
+
+  btn.disabled = true;
+  try {
+    status.textContent = auth.challenge?.solved ? '' : 'Verifying you’re human…';
+    let pow;
+    try { pow = await auth.challenge.promise; } catch (x) { throw new Error(x.message || 'Couldn’t verify. Try again.'); }
+    status.textContent = signup ? 'Creating your account…' : 'Signing in…';
+    const r = await api('/api/auth/' + (signup ? 'signup' : 'login'), {
+      username, password, pow, turnstile: auth.turnstileToken, website: $('#authWebsite').value,
+    });
+    if (r.error) throw new Error(r.error);
+    closeAuth();
+    await afterAuthChange();
+    toast(signup ? `Welcome to Uni TV, ${username}!` : `Signed in as ${session.user?.username || username}`);
+  } catch (x) {
+    err.textContent = x.message;
+    status.textContent = '';
+    prepareChallenge(); // challenges are single-use
+    mountTurnstile();
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// ----- watch time tracking (signed-in users only) -----
+const watch = {
+  key: null, channel: null, seconds: 0, last: 0,
+  tick() {
+    const now = Date.now();
+    const dt = (now - this.last) / 1000;
+    this.last = now;
+    const c = state.current;
+    // Count time the channel is actually playing (background audio counts, a muted hidden tab doesn't)
+    if (!session.user || !c || video.paused || video.readyState < 3 || (document.hidden && video.muted)) return;
+    if (this.channel?.id !== c.id) { this.flush(true); this.channel = c; this.key = Math.random().toString(36).slice(2) + Date.now().toString(36); }
+    this.seconds += Math.min(dt, 2);
+    if (this.seconds >= 30) this.flush(false);
+  },
+  flush(end) {
+    if (this.channel && this.seconds >= 1 && session.user) {
+      const body = JSON.stringify({ key: this.key, channel: this.channel.id, name: this.channel.name, seconds: Math.round(this.seconds) });
+      if (end && navigator.sendBeacon) navigator.sendBeacon('/api/watch', new Blob([body], { type: 'application/json' }));
+      else fetch('/api/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+    }
+    this.seconds = 0;
+    if (end) { this.channel = null; this.key = null; }
+  },
+};
+watch.last = Date.now();
+setInterval(() => watch.tick(), 1000);
+window.addEventListener('pagehide', () => watch.flush(true));
+
+// ----- account page -----
+async function renderAccount() {
+  const root = $('#view-account');
+  if (!session.user) { root.innerHTML = ''; return; }
+  watch.flush(false);
+  const h = await api('/api/history').catch(() => null);
+  if (!h || h.error) { root.innerHTML = `<div class="empty">${esc(h?.error || 'Couldn’t load your account.')}</div>`; return; }
+  const u = h.user;
+  const week = Object.entries(h.daily).filter(([d]) => Date.now() - new Date(d).getTime() < 7 * 864e5).reduce((a, [, v]) => a + v, 0);
+  const maxTop = Math.max(1, ...h.top.map((t) => t.seconds));
+  root.innerHTML = `
+    <div class="acchead">
+      <div class="bigav" style="${avatarStyle(u.username)}">${esc(u.username[0].toUpperCase())}</div>
+      <div><h2>${esc(u.username)}</h2><div class="meta">Member since ${new Date(u.createdAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</div></div>
+      <div class="actions">
+        <button class="btn" id="accLogoutOthers">Sign out other devices</button>
+        <button class="btn" id="accLogout">Sign out</button>
+      </div>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="tv">${fmtDur(h.totals.seconds)}</div><div class="tl">Total watch time</div></div>
+      <div class="tile"><div class="tv">${fmtDur(week)}</div><div class="tl">Last 7 days</div></div>
+      <div class="tile"><div class="tv">${h.totals.channels}</div><div class="tl">Channels watched</div></div>
+      <div class="tile"><div class="tv">${h.totals.sessions}</div><div class="tl">Viewing sessions</div></div>
+    </div>
+    <div class="accgrid">
+      <section><h3>Most watched</h3>
+        ${h.top.length ? h.top.map((t) => `<div class="hrow" data-play="${t.channel_id}">
+          <div class="hname">${esc(t.name)}<div style="height:3px;background:var(--line);border-radius:2px;margin-top:5px"><div style="height:3px;border-radius:2px;background:var(--accent);width:${(t.seconds / maxTop) * 100}%"></div></div></div>
+          <div class="hsub">${fmtDur(t.seconds)}</div></div>`).join('') : '<div class="empty" style="padding:0">Watch something for a bit and it’ll show up here.</div>'}
+      </section>
+      <section><h3>History</h3>
+        ${h.recent.length ? h.recent.map((r) => `<div class="hrow" data-play="${r.channel_id}">
+          <div class="hname">${esc(r.name)}</div>
+          <div class="hsub">${timeAgo(r.last_at)} · ${fmtDur(r.seconds)}</div></div>`).join('') : '<div class="empty" style="padding:0">No history yet.</div>'}
+      </section>
+    </div>
+    <div class="danger-zone">
+      <h3>Account settings</h3>
+      <form id="pwForm" class="composer" style="max-width:640px;margin-bottom:12px">
+        <input type="password" id="pwCurrent" placeholder="Current password" autocomplete="current-password" />
+        <input type="password" id="pwNext" placeholder="New password (8+ characters)" autocomplete="new-password" />
+        <button class="btn" type="submit">Change password</button>
+      </form>
+      <div class="row2">
+        <button class="btn" id="accClear">Clear watch history</button>
+        <button class="btn danger" id="accDelete">Delete account…</button>
+      </div>
+    </div>`;
+
+  root.querySelectorAll('[data-play]').forEach((el) => (el.onclick = () => {
+    const c = state.byId.get(el.dataset.play);
+    c ? play(c) : toast('That channel isn’t in the current playlist.');
+  }));
+  $('#accLogout').onclick = async () => { watch.flush(true); await api('/api/auth/logout', {}); await afterAuthChange(); toast('Signed out'); };
+  $('#accLogoutOthers').onclick = async () => { await api('/api/auth/logout-others', {}); toast('Signed out everywhere else'); };
+  $('#accClear').onclick = async () => {
+    if (!confirm('Clear your whole watch history? This can’t be undone.')) return;
+    await api('/api/history/clear', {}); renderAccount();
+  };
+  $('#pwForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const r = await api('/api/auth/password', { current: $('#pwCurrent').value, next: $('#pwNext').value });
+    if (r.error) return toast(r.error, 4000);
+    $('#pwCurrent').value = $('#pwNext').value = '';
+    toast('Password changed. Other devices were signed out.');
+  };
+  $('#accDelete').onclick = async () => {
+    const pw = $('#pwCurrent').value;
+    if (!pw) { $('#pwCurrent').focus(); return toast('Type your password in the “Current password” box first, then click Delete again.', 5000); }
+    if (!confirm('Permanently delete your account and watch history? This can’t be undone.')) return;
+    const r = await api('/api/auth/delete', { password: pw });
+    if (r.error) return toast(r.error, 4000);
+    await afterAuthChange();
+    toast('Your account was deleted.');
+  };
 }
 
 // ---------- sharing ----------
@@ -988,8 +1263,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'Escape' && !document.fullscreenElement) closePlayer();
 });
 
-load().then(() => {
-  $('#myName').textContent = me.name || 'set a name';
+Promise.all([load(), loadSession()]).then(async () => {
+  await sayHello();
   connectEvents();
   loadChat();
   openSharedLink();

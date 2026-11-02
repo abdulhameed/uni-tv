@@ -11,7 +11,7 @@ const CHAT_KEEP = 500;
 const ROOM_KEEP = 200; // per-channel chat rooms
 const COMMENTS_KEEP = 300; // per channel
 
-function createSocial(dataDir, channelById) {
+function createSocial(dataDir, channelById, { isUsername = () => false, guestPosting = false } = {}) {
   const file = path.join(dataDir, 'social.json');
   // rooms: 'global' plus one per channel id
   let db = { comments: {}, rooms: { global: [] } };
@@ -33,6 +33,19 @@ function createSocial(dataDir, channelById) {
   const cleanText = (s) => String(s || '').replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim().slice(0, MAX_TEXT);
   const newId = () => crypto.randomBytes(6).toString('hex');
 
+  // Signed-in users post as their account; guests can't borrow a registered name.
+  function identity(user, secret, name) {
+    if (user) return { author: 'u' + user.id, name: user.username, member: true };
+    let n = cleanName(name);
+    if (isUsername(n)) n = (n.slice(0, MAX_NAME - 8) + ' (guest)');
+    return { author: secret ? authorOf(secret) : null, name: n, member: false };
+  }
+  function canPost(user, json, res) {
+    if (user || guestPosting) return true;
+    json(res, { error: 'Sign in to join the conversation.', needAuth: true }, 401);
+    return false;
+  }
+
   function broadcast(event, data) {
     const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const res of clients.keys()) res.write(msg);
@@ -43,7 +56,7 @@ function createSocial(dataDir, channelById) {
     for (const c of clients.values()) {
       if (!c.author) continue;
       const ch = c.watching && channelById(c.watching);
-      people.set(c.author, { name: c.name, watching: ch ? { id: ch.id, name: ch.name, flag: ch.flag || '' } : null });
+      people.set(c.author, { name: c.name, member: !!c.member, watching: ch ? { id: ch.id, name: ch.name, flag: ch.flag || '' } : null });
     }
     return [...people.values()];
   }
@@ -69,16 +82,12 @@ function createSocial(dataDir, channelById) {
   }
 
   // Returns true if the request was handled.
-  async function handle(req, res, p, url, { json, readJson, local }) {
+  async function handle(req, res, p, url, { json, readJson, local, user }) {
     if (p === '/api/events') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
       res.write(': connected\n\n');
-      const secret = url.searchParams.get('secret');
-      clients.set(res, {
-        author: secret ? authorOf(secret) : null,
-        name: cleanName(url.searchParams.get('name')),
-        watching: url.searchParams.get('watching') || null,
-      });
+      const who = identity(user, url.searchParams.get('secret'), url.searchParams.get('name'));
+      clients.set(res, { ...who, secret: url.searchParams.get('secret'), watching: url.searchParams.get('watching') || null });
       pushPresence();
       req.on('close', () => { clients.delete(res); pushPresence(); });
       return true;
@@ -86,13 +95,17 @@ function createSocial(dataDir, channelById) {
 
     if (p === '/api/me' && req.method === 'POST') {
       const { secret, name, watching } = await readJson(req);
-      const author = authorOf(secret);
-      // Update this person's presence on all their open connections
+      const who = identity(user, secret, name);
+      // Update this person's presence on all their open connections (matched by browser secret,
+      // so signing in or out on this browser updates its existing connections too)
       for (const c of clients.values()) {
-        if (c.author === author) { c.name = cleanName(name); if (watching !== undefined) c.watching = watching || null; }
+        if (c.author === who.author || (secret && c.secret === secret)) {
+          Object.assign(c, who);
+          if (watching !== undefined) c.watching = watching || null;
+        }
       }
       pushPresence();
-      json(res, { author, host: local });
+      json(res, { author: who.author, name: who.name, member: who.member, host: local, canPost: !!user || guestPosting });
       return true;
     }
 
@@ -108,10 +121,11 @@ function createSocial(dataDir, channelById) {
       const room = roomOf(roomId);
       const body = cleanText(text);
       if (!room) { json(res, { error: 'Unknown room' }, 404); return true; }
-      if (!secret || !body) { json(res, { error: 'Empty message' }, 400); return true; }
-      const author = authorOf(secret);
-      if (rateLimited(author)) { json(res, { error: 'Slow down a little.' }, 429); return true; }
-      const msg = { id: newId(), room, author, name: cleanName(name), text: body, t: Date.now(),
+      if (!canPost(user, json, res)) return true;
+      const who = identity(user, secret, name);
+      if (!who.author || !body) { json(res, { error: 'Empty message' }, 400); return true; }
+      if (rateLimited(who.author)) { json(res, { error: 'Slow down a little.' }, 429); return true; }
+      const msg = { id: newId(), room, ...who, text: body, t: Date.now(),
         watching: room === 'global' ? watchingInfo(watching) : null };
       const list = (db.rooms[room] ||= []);
       list.push(msg);
@@ -134,10 +148,11 @@ function createSocial(dataDir, channelById) {
         if (!channelById(channelId)) { json(res, { error: 'Unknown channel' }, 404); return true; }
         const { secret, name, text } = await readJson(req);
         const body = cleanText(text);
-        if (!secret || !body) { json(res, { error: 'Empty comment' }, 400); return true; }
-        const author = authorOf(secret);
-        if (rateLimited(author)) { json(res, { error: 'Slow down a little.' }, 429); return true; }
-        const c = { id: newId(), channel: channelId, author, name: cleanName(name), text: body, t: Date.now() };
+        if (!canPost(user, json, res)) return true;
+        const who = identity(user, secret, name);
+        if (!who.author || !body) { json(res, { error: 'Empty comment' }, 400); return true; }
+        if (rateLimited(who.author)) { json(res, { error: 'Slow down a little.' }, 429); return true; }
+        const c = { id: newId(), channel: channelId, ...who, text: body, t: Date.now() };
         const list = (db.comments[channelId] ||= []);
         list.push(c);
         if (list.length > COMMENTS_KEEP) db.comments[channelId] = list.slice(-COMMENTS_KEEP);
@@ -156,7 +171,7 @@ function createSocial(dataDir, channelById) {
     // Delete: authors can remove their own posts; the host (this computer) can remove anything.
     if ((m = p.match(/^\/api\/(chat|comments)\/delete$/)) && req.method === 'POST') {
       const { secret, id, channel, room = 'global' } = await readJson(req);
-      const author = secret ? authorOf(secret) : null;
+      const { author } = identity(user, secret, '');
       const list = (m[1] === 'chat' ? db.rooms[room] : db.comments[channel]) || [];
       const i = list.findIndex((x) => x.id === id);
       if (i < 0) { json(res, { error: 'Not found' }, 404); return true; }
