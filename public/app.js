@@ -122,6 +122,7 @@ function setView(v) {
   $('#view-' + v).classList.remove('hidden');
   if (v === 'browse') renderBrowse();
   if (v === 'recordings') renderRecordings();
+  if (v === 'chat') { chatUnread = 0; updateChatDot(); ensureName(); scrollChat(true); $('#chatInput').focus(); }
 }
 
 // ----- curated -----
@@ -400,6 +401,9 @@ async function play(c, fromList) {
   state.recents = [c.id, ...state.recents.filter((x) => x !== c.id)].slice(0, 20);
   store.set('recents', state.recents);
   history.replaceState(null, '', shareUrl(c, location.origin));
+  sayHello();
+  loadComments(c);
+  loadRoom(c);
   if (!$('#sharePanel').classList.contains('hidden')) renderShare();
 
   if (!c.play) {
@@ -519,6 +523,203 @@ function closePlayer() {
   $('#sharePanel').classList.add('hidden');
   history.replaceState(null, '', location.pathname);
   markPlaying();
+  sayHello();
+}
+
+// ---------- people: comments & live chat ----------
+const me = {
+  secret: store.get('secret', null) || (() => {
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    const v = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+    store.set('secret', v);
+    return v;
+  })(),
+  name: store.get('name', ''),
+  author: null,
+  host: false,
+};
+let chatUnread = 0;
+let chatLoaded = false;
+
+function ensureName(force) {
+  if (me.name && !force) return true;
+  const n = (prompt('Pick a name for comments and chat:', me.name || '') || '').trim().slice(0, 24);
+  if (!n) return !!me.name;
+  me.name = n;
+  store.set('name', n);
+  $('#myName').textContent = n;
+  sayHello();
+  return true;
+}
+
+async function sayHello() {
+  const r = await api('/api/me', { secret: me.secret, name: me.name || 'Guest', watching: state.current?.id || null }).catch(() => null);
+  if (r) { me.author = r.author; me.host = r.host; }
+}
+
+function timeAgo(t) {
+  const s = (Date.now() - t) / 1000;
+  if (s < 45) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + 'm ago';
+  if (s < 86400) return Math.round(s / 3600) + 'h ago';
+  return new Date(t).toLocaleDateString();
+}
+
+function msgHTML(m, kind) {
+  const mine = m.author === me.author;
+  const h = hue(m.author);
+  const tag = m.watching ? `<button class="chtag" data-watch="${m.watching.id}">${m.watching.flag ? m.watching.flag + ' ' : ''}${esc(m.watching.name)}</button>` : '';
+  return `<div class="msg${mine ? ' mine' : ''}" data-mid="${m.id}">
+    <div class="av" style="background:hsl(${h} 45% 28%)">${esc(m.name.slice(0, 1).toUpperCase())}</div>
+    <div class="mbody">
+      <div class="mhead"><b>${esc(m.name)}</b><span title="${new Date(m.t).toLocaleString()}">${timeAgo(m.t)}</span>${tag}
+        ${mine || me.host ? `<button class="del" data-del="${kind}" data-id="${m.id}" data-channel="${m.channel || ''}" data-room="${m.room || 'global'}">delete</button>` : ''}</div>
+      <div class="mtext">${esc(m.text)}</div>
+    </div></div>`;
+}
+
+// ----- comments -----
+async function loadComments(c) {
+  const list = $('#commentList');
+  list.innerHTML = '<div class="empty" style="padding:4px 0">Loading…</div>';
+  const comments = await api('/api/comments/' + c.id).catch(() => []);
+  if (state.current?.id !== c.id) return;
+  renderComments(comments);
+}
+function renderComments(comments) {
+  $('#cCount').textContent = comments.length || '';
+  $('#commentList').innerHTML = comments.length
+    ? comments.slice().reverse().map((m) => msgHTML(m, 'comments')).join('')
+    : '<div class="empty" style="padding:4px 0">No comments yet. Start the conversation.</div>';
+}
+$('#commentForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const input = $('#commentInput');
+  const text = input.value.trim();
+  if (!text || !state.current || !ensureName()) return;
+  const r = await api('/api/comments/' + state.current.id, { secret: me.secret, name: me.name, text });
+  if (r.error) return toast(r.error);
+  input.value = '';
+};
+
+// ----- per-channel live chat -----
+let lastPresence = [];
+async function loadRoom(c) {
+  const log = $('#roomLog');
+  log.innerHTML = '';
+  const { messages = [] } = await api('/api/chat?room=' + c.id).catch(() => ({}));
+  if (state.current?.id !== c.id) return;
+  log.innerHTML = messages.length ? messages.map((m) => msgHTML(m, 'chat')).join('')
+    : `<div class="empty">No one's said anything yet.<br>Start the chat for ${esc(c.name)}.</div>`;
+  log.scrollTop = log.scrollHeight;
+  updateViewers();
+}
+function updateViewers() {
+  const n = state.current ? lastPresence.filter((p) => p.watching?.id === state.current.id).length : 0;
+  $('#viewerCount').textContent = n ? `· ${n} watching` : '';
+}
+$('#roomForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const input = $('#roomInput');
+  const text = input.value.trim();
+  if (!text || !state.current || !ensureName()) return;
+  const r = await api('/api/chat', { secret: me.secret, name: me.name, text, room: state.current.id });
+  if (r.error) return toast(r.error);
+  input.value = '';
+};
+function setPane(name) {
+  $$('.ptabs button').forEach((b) => b.classList.toggle('active', b.dataset.ptab === name));
+  $('#pane-room').classList.toggle('hidden', name !== 'room');
+  $('#pane-comments').classList.toggle('hidden', name !== 'comments');
+  store.set('pane', name);
+  if (name === 'room') $('#roomLog').scrollTop = $('#roomLog').scrollHeight;
+}
+$$('.ptabs button').forEach((b) => (b.onclick = () => setPane(b.dataset.ptab)));
+setPane(store.get('pane', 'room'));
+
+// ----- live chat -----
+function scrollChat(force) {
+  const log = $('#chatLog');
+  if (force || log.scrollHeight - log.scrollTop - log.clientHeight < 120) log.scrollTop = log.scrollHeight;
+}
+function updateChatDot() {
+  const dot = $('#chatDot');
+  dot.textContent = chatUnread > 99 ? '99+' : chatUnread;
+  dot.classList.toggle('hidden', !chatUnread);
+}
+async function loadChat() {
+  const { messages, online } = await api('/api/chat');
+  $('#chatLog').innerHTML = messages.length ? messages.map((m) => msgHTML(m, 'chat')).join('')
+    : '<div class="empty" id="chatEmpty">No messages yet. Say hi 👋</div>';
+  lastPresence = online; renderOnline(online); updateViewers();
+  chatLoaded = true;
+  scrollChat(true);
+}
+function renderOnline(people) {
+  $('#onlineCount').textContent = people.length;
+  $('#onlineList').innerHTML = people.map((p) => `<div class="person">${esc(p.name)}
+    ${p.watching ? `<div class="pw">watching <button class="chtag" data-watch="${p.watching.id}">${p.watching.flag ? p.watching.flag + ' ' : ''}${esc(p.watching.name)}</button></div>` : ''}</div>`).join('');
+}
+$('#chatForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const input = $('#chatInput');
+  const text = input.value.trim();
+  if (!text || !ensureName()) return;
+  const watching = $('#chatAttach').checked ? state.current?.id : null;
+  const r = await api('/api/chat', { secret: me.secret, name: me.name, text, watching });
+  if (r.error) return toast(r.error);
+  input.value = '';
+};
+$('#changeName').onclick = () => ensureName(true);
+
+// Tune in from a chat tag; delete own posts.
+document.addEventListener('click', async (e) => {
+  const tag = e.target.closest('[data-watch]');
+  if (tag) { const c = state.byId.get(tag.dataset.watch); if (c) play(c); return; }
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    if (!confirm('Delete this message?')) return;
+    const r = await api(`/api/${del.dataset.del}/delete`, { secret: me.secret, id: del.dataset.id, channel: del.dataset.channel, room: del.dataset.room });
+    if (r.error) toast(r.error);
+  }
+});
+
+// ----- real-time updates -----
+function connectEvents() {
+  const q = new URLSearchParams({ secret: me.secret, name: me.name || 'Guest', watching: state.current?.id || '' });
+  const es = new EventSource('/api/events?' + q);
+  es.addEventListener('chat', (e) => {
+    const m = JSON.parse(e.data);
+    if (m.room && m.room !== 'global') {
+      if (state.current?.id !== m.room) return;
+      const log = $('#roomLog');
+      const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+      $('.empty', log)?.remove();
+      log.insertAdjacentHTML('beforeend', msgHTML(m, 'chat'));
+      if (atBottom || m.author === me.author) log.scrollTop = log.scrollHeight;
+      return;
+    }
+    if (!chatLoaded) return;
+    $('#chatEmpty')?.remove();
+    $('#chatLog').insertAdjacentHTML('beforeend', msgHTML(m, 'chat'));
+    scrollChat(m.author === me.author);
+    if (state.view !== 'chat' && m.author !== me.author) { chatUnread++; updateChatDot(); }
+  });
+  es.addEventListener('chat-delete', (e) => $$(`#chatLog [data-mid="${JSON.parse(e.data).id}"], #roomLog [data-mid="${JSON.parse(e.data).id}"]`).forEach((el) => el.remove()));
+  es.addEventListener('comment', (e) => {
+    const m = JSON.parse(e.data);
+    if (state.current?.id !== m.channel) return;
+    $('#commentList .empty')?.remove();
+    $('#commentList').insertAdjacentHTML('afterbegin', msgHTML(m, 'comments'));
+    $('#cCount').textContent = $$('#commentList .msg').length;
+  });
+  es.addEventListener('comment-delete', (e) => {
+    $(`#commentList [data-mid="${JSON.parse(e.data).id}"]`)?.remove();
+    $('#cCount').textContent = $$('#commentList .msg').length || '';
+  });
+  es.addEventListener('presence', (e) => { lastPresence = JSON.parse(e.data); renderOnline(lastPresence); updateViewers(); });
+  // EventSource reconnects by itself; refresh state when it does.
+  es.onopen = () => { sayHello(); if (chatLoaded) loadChat(); if (state.current) loadRoom(state.current); };
 }
 
 // ---------- sharing ----------
@@ -788,6 +989,9 @@ document.addEventListener('keydown', (e) => {
 });
 
 load().then(() => {
+  $('#myName').textContent = me.name || 'set a name';
+  connectEvents();
+  loadChat();
   openSharedLink();
   api('/api/info').then((i) => (serverInfo = i)).catch(() => {});
   api('/api/scan').then((s) => s.running && pollScan());

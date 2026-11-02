@@ -13,6 +13,7 @@
     <nav class="tabs">
       <button data-view="curated" class="active">Curated</button>
       <button data-view="browse">All channels</button>
+      <button data-view="chat">Live chat <span id="chatDot" class="pill hidden"></span></button>
       <button data-view="recordings">Recordings <span id="recCount" class="pill hidden"></span></button>
     </nav>
     <div class="search">
@@ -80,6 +81,25 @@
       </div>
 
       <div id="view-recordings" class="view hidden"></div>
+
+      <div id="view-chat" class="view hidden">
+        <div class="chatmain">
+          <div class="chathead">
+            <div><h2>Live chat</h2><div class="meta">Everyone using this Uni TV. Click a channel tag to watch along.</div></div>
+            <button id="changeName" class="btn">You: <b id="myName"></b></button>
+          </div>
+          <div id="chatLog" class="chatlog"></div>
+          <form id="chatForm" class="composer">
+            <input id="chatInput" maxlength="500" placeholder="Say something…" autocomplete="off" />
+            <label class="check" title="Show which channel you're watching"><input type="checkbox" id="chatAttach" checked /> Tag channel</label>
+            <button class="btn" type="submit">Send</button>
+          </form>
+        </div>
+        <aside class="online">
+          <h4>Online <span id="onlineCount"></span></h4>
+          <div id="onlineList"></div>
+        </aside>
+      </div>
     </section>
 
     <aside id="player" class="hidden">
@@ -135,6 +155,26 @@
             </select>
           </div>
           <div id="recStatus" class="recstatus"></div>
+        </div>
+        <div class="social">
+          <div class="ptabs">
+            <button data-ptab="room" class="active">Live chat <span id="viewerCount"></span></button>
+            <button data-ptab="comments">Comments <span id="cCount"></span></button>
+          </div>
+          <div id="pane-room" class="pane">
+            <div id="roomLog" class="roomlog"></div>
+            <form id="roomForm" class="composer">
+              <input id="roomInput" maxlength="500" placeholder="Chat with everyone watching…" autocomplete="off" />
+              <button class="btn" type="submit">Send</button>
+            </form>
+          </div>
+          <div id="pane-comments" class="pane hidden">
+            <form id="commentForm" class="composer">
+              <input id="commentInput" maxlength="500" placeholder="Add a comment…" autocomplete="off" />
+              <button class="btn" type="submit">Post</button>
+            </form>
+            <div id="commentList"></div>
+          </div>
         </div>
       </div>
     </aside>

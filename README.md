@@ -10,6 +10,8 @@ npm start          # or: node server.js
 
 Then open http://localhost:4321 in **Chrome / Edge / Arc** (needed for recording).
 
+**Comments & live chat:** every channel has its own **live chat** (with a count of who's watching) and a **comments** section, as two tabs under the player. The **Live chat** tab is one room for everyone using this Uni TV. It shows who's online and what they're watching, and you can click a channel tag to watch along. Everyone picks a nickname, and there are no accounts. People can delete their own posts, and the host computer can delete anything. Everything is stored in `data/social.json`.
+
 **Sharing:** the ↗ button in the player gives you a link to the channel, a one-channel `.m3u` file for VLC/IINA, and the raw stream URL. Start with `LAN=1 npm start` and friends on the same Wi‑Fi can open the link and watch. Guests can't see or change your recordings. Note that LAN mode also lets anyone on that network stream through your computer, so use it only on networks you trust.
 
 - **Curated**: rows per category with only streams that pass a live check. They show the best quality first and leave out part-time and geo-blocked channels. Continue watching and Favorites rows sit at the top.

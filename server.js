@@ -9,6 +9,7 @@ const { exec } = require('child_process');
 const os = require('os');
 const { parse } = require('./playlist');
 const { enrich } = require('./enrich');
+const { createSocial } = require('./social');
 
 const PORT = parseInt(process.env.PORT || '4321', 10);
 // Set LAN=1 to let other devices on your network open shared links.
@@ -238,6 +239,9 @@ async function startScan(force) {
   scan.running = false;
 }
 
+// ---------- Comments & chat ----------
+const social = createSocial(DATA_DIR, (id) => byId.get(id));
+
 // ---------- Recordings ----------
 const activeRecs = new Map(); // id -> { file, stream }
 
@@ -325,6 +329,8 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/health') return json(res, health);
+
+    if (p.startsWith('/api/') && (await social.handle(req, res, p, url, { json, readJson, local }))) return;
 
     if (p === '/api/info') return json(res, { lan: LAN, lanUrls: LAN ? lanUrls() : [] });
 
