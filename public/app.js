@@ -317,7 +317,8 @@ function drawRows() {
 
 // ----- recordings -----
 async function refreshRecCount() {
-  const recs = await api('/api/recordings');
+  let recs = await api('/api/recordings');
+  if (!Array.isArray(recs)) recs = [];
   const pill = $('#recCount');
   pill.textContent = recs.length;
   pill.classList.toggle('hidden', !recs.length);
@@ -398,6 +399,8 @@ async function play(c, fromList) {
 
   state.recents = [c.id, ...state.recents.filter((x) => x !== c.id)].slice(0, 20);
   store.set('recents', state.recents);
+  history.replaceState(null, '', shareUrl(c, location.origin));
+  if (!$('#sharePanel').classList.contains('hidden')) renderShare();
 
   if (!c.play) {
     overlay(`<div>This stream uses ${esc(c.url.split(':')[0].toUpperCase())}, which browsers can't play.</div>
@@ -513,7 +516,67 @@ function closePlayer() {
   teardown();
   state.current = null;
   $('#player').classList.add('hidden');
+  $('#sharePanel').classList.add('hidden');
+  history.replaceState(null, '', location.pathname);
   markPlaying();
+}
+
+// ---------- sharing ----------
+let serverInfo = { lan: false, lanUrls: [] };
+
+function shareUrl(c, base) {
+  return `${base}/?watch=${c.id}&n=${encodeURIComponent(c.name)}${c.country ? '&c=' + c.country : ''}`;
+}
+
+function renderShare() {
+  const c = state.current;
+  if (!c) return;
+  const base = serverInfo.lanUrls[0] || location.origin;
+  $('#shareLink').value = shareUrl(c, base);
+  $('#shareM3u').href = `/share/${c.id}.m3u`;
+  $('#copyStream').disabled = false;
+  $('#shareHint').innerHTML = serverInfo.lan
+    ? 'Friends on the same Wi‑Fi can open this link and watch straight away. For anyone else, send them the VLC file.'
+    : 'This link opens the channel for friends who run Uni TV. For everyone else, send the VLC file, which plays in VLC, IINA or most media players. To let friends on your Wi‑Fi use the link, start the app with <code>LAN=1 npm start</code>.';
+  $('#nativeShare').classList.toggle('hidden', !navigator.share);
+}
+
+async function copy(text, msg) {
+  try { await navigator.clipboard.writeText(text); toast(msg); }
+  catch { $('#shareLink').select(); document.execCommand('copy'); toast(msg); }
+}
+
+$('#pShare').onclick = () => {
+  const panel = $('#sharePanel');
+  panel.classList.toggle('hidden');
+  $('#pShare').classList.toggle('on', !panel.classList.contains('hidden'));
+  renderShare();
+};
+$('#copyLink').onclick = () => copy($('#shareLink').value, 'Link copied');
+$('#copyStream').onclick = () => state.current && copy(state.current.url, 'Stream URL copied. Paste it into VLC → Open Network.');
+$('#shareLink').onclick = (e) => e.target.select();
+$('#nativeShare').onclick = async () => {
+  const c = state.current;
+  const file = await fetch(`/share/${c.id}.m3u`).then((r) => r.blob()).then((b) => new File([b], `${c.name}.m3u`, { type: 'audio/x-mpegurl' })).catch(() => null);
+  const data = { title: c.name, text: `Watch ${c.name}${c.flag ? ' ' + c.flag : ''} with me`, url: $('#shareLink').value };
+  if (file && navigator.canShare?.({ files: [file] })) data.files = [file];
+  navigator.share(data).catch(() => {});
+};
+
+// Open a shared link: ?watch=<id>&n=<name>&c=<country>
+function openSharedLink() {
+  const q = new URLSearchParams(location.search);
+  const id = q.get('watch');
+  if (!id) return;
+  let c = state.byId.get(id);
+  if (!c && q.get('n')) {
+    // Different playlist: fall back to the best channel with the same name (and country, if given).
+    const name = q.get('n').toLowerCase(), country = q.get('c');
+    const hits = state.channels.filter((x) => x.name.toLowerCase() === name && x.play && (!country || !x.country || x.country === country));
+    c = hits.length ? rankGroup(hits)[0] : null;
+  }
+  if (c) play(c);
+  else toast(`Couldn’t find “${q.get('n') || 'that channel'}” in this playlist.`, 5000);
 }
 
 function toggleFav(id) {
@@ -559,7 +622,8 @@ const recorder = {
     if (kind === 'video' && !full.getVideoTracks().length) return toast('No video track to record.');
 
     const [mime, ext] = this.pickMime(kind);
-    const { id, file } = await api('/api/rec/start', { channel: c.name, kind, ext });
+    const { id, file, error } = await api('/api/rec/start', { channel: c.name, kind, ext });
+    if (error) return toast(error);
     const mr = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 6e6, audioBitsPerSecond: 192e3 } : {});
     const rec = { mr, kind, id, file, started: Date.now(), bytes: 0, queue: Promise.resolve() };
     mr.ondataavailable = (e) => {
@@ -723,4 +787,8 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'Escape' && !document.fullscreenElement) closePlayer();
 });
 
-load().then(() => api('/api/scan').then((s) => s.running && pollScan()));
+load().then(() => {
+  openSharedLink();
+  api('/api/info').then((i) => (serverInfo = i)).catch(() => {});
+  api('/api/scan').then((s) => s.running && pollScan());
+});

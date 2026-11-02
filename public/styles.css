@@ -159,6 +159,13 @@ body.theater #player { width: 62%; }
 .icon { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; width: 36px; height: 34px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
 .icon:hover { border-color: #444a57; }
 #pFav.on { color: #ffc23d; }
+.sharepanel { margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.sharerow { display: flex; gap: 8px; }
+.sharerow input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--muted); }
+.sharehint { font-size: 12px; color: var(--muted); margin: 8px 0 10px; line-height: 1.45; }
+.sharehint code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.shareactions { display: flex; gap: 6px; flex-wrap: wrap; }
+#pShare.on { border-color: var(--accent); }
 .recpanel { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
 .rechead { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 9px; }
 .recrow { display: flex; gap: 8px; }

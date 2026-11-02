@@ -10,6 +10,8 @@ npm start          # or: node server.js
 
 Then open http://localhost:4321 in **Chrome / Edge / Arc** (needed for recording).
 
+**Sharing:** the ↗ button in the player gives you a link to the channel, a one-channel `.m3u` file for VLC/IINA, and the raw stream URL. Start with `LAN=1 npm start` and friends on the same Wi‑Fi can open the link and watch. Guests can't see or change your recordings. Note that LAN mode also lets anyone on that network stream through your computer, so use it only on networks you trust.
+
 - **Curated**: rows per category with only streams that pass a live check. They show the best quality first and leave out part-time and geo-blocked channels. Continue watching and Favorites rows sit at the top.
 - **All channels**: search plus filters for status, quality, category, favorites, geo-blocked and part-time. Duplicate names are merged, and the player lets you switch between sources.
 - **Metadata**: country, language, categories and logos come from the [iptv-org](https://github.com/iptv-org/api) database. It is downloaded to `data/iptv-org/` and refreshed weekly, and about 80% of channels match.

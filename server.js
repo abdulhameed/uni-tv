@@ -6,10 +6,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { exec } = require('child_process');
+const os = require('os');
 const { parse } = require('./playlist');
 const { enrich } = require('./enrich');
 
 const PORT = parseInt(process.env.PORT || '4321', 10);
+// Set LAN=1 to let other devices on your network open shared links.
+const LAN = /^(1|true|yes)$/i.test(process.env.LAN || '');
+const HOST = LAN ? '0.0.0.0' : '127.0.0.1';
 const ROOT = __dirname;
 const PLAYLIST = process.env.PLAYLIST || path.join(ROOT, 'Global TV.m3u');
 const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -303,6 +307,12 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
   try {
+    let m;
+    // In LAN mode, guests can watch but can't touch recordings or start scans.
+    const local = /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || '');
+    if (!local && (/^\/(api\/rec|api\/recordings|recordings)/.test(p) || (p === '/api/scan' && req.method === 'POST'))) {
+      return json(res, { error: 'Only available on the host computer' }, 403);
+    }
     if (p.startsWith('/p/')) return await handleProxy(req, res, req.url.slice(3));
 
     if (p === '/api/channels') {
@@ -315,6 +325,24 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/health') return json(res, health);
+
+    if (p === '/api/info') return json(res, { lan: LAN, lanUrls: LAN ? lanUrls() : [] });
+
+    // One-channel playlist for VLC/IINA etc. — keeps any required headers.
+    if ((m = p.match(/^\/share\/([a-f0-9]+)\.m3u$/))) {
+      await enriched;
+      const c = byId.get(m[1]);
+      if (!c) return send(res, 404, 'unknown channel');
+      const lines = ['#EXTM3U', `#EXTINF:-1${c.logo ? ` tvg-logo="${c.logo}"` : ''},${c.name}`];
+      if (c.referrer) lines.push(`#EXTVLCOPT:http-referrer=${c.referrer}`);
+      if (c.userAgent) lines.push(`#EXTVLCOPT:http-user-agent=${c.userAgent}`);
+      lines.push(c.url, '');
+      res.writeHead(200, {
+        'Content-Type': 'audio/x-mpegurl',
+        'Content-Disposition': `attachment; filename="${safeName(c.name)}.m3u"`,
+      });
+      return res.end(lines.join('\n'));
+    }
 
     if (p === '/api/check' && req.method === 'POST') {
       const { ids = [], force = false } = await readJson(req);
@@ -351,7 +379,6 @@ const server = http.createServer(async (req, res) => {
       return json(res, { id, file });
     }
 
-    let m;
     if ((m = p.match(/^\/api\/rec\/([a-f0-9]+)\/(chunk|stop)$/)) && req.method === 'POST') {
       const rec = activeRecs.get(m[1]);
       if (!rec) return json(res, { error: 'no such recording' }, 404);
@@ -393,6 +420,13 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+function lanUrls() {
+  return Object.values(os.networkInterfaces()).flat()
+    .filter((i) => i && i.family === 'IPv4' && !i.internal)
+    .map((i) => `http://${i.address}:${PORT}`);
+}
+
+server.listen(PORT, HOST, () => {
   console.log(`Uni TV running at http://localhost:${PORT}`);
+  if (LAN) console.log(`Shared on your network at ${lanUrls().join(', ')}`);
 });

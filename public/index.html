@@ -105,6 +105,20 @@
           <span class="spacer"></span>
           <button id="pPip" class="icon" title="Picture in picture">⧉</button>
           <button id="pFull" class="icon" title="Fullscreen (F)">⛶</button>
+          <button id="pShare" class="icon" title="Share with friends">↗</button>
+        </div>
+        <div id="sharePanel" class="sharepanel hidden">
+          <div class="rechead">Share this channel</div>
+          <div class="sharerow">
+            <input id="shareLink" readonly />
+            <button id="copyLink" class="btn">Copy link</button>
+          </div>
+          <div id="shareHint" class="sharehint"></div>
+          <div class="shareactions">
+            <button id="nativeShare" class="btn hidden">Share…</button>
+            <a id="shareM3u" class="btn" download>Download for VLC (.m3u)</a>
+            <button id="copyStream" class="btn">Copy stream URL</button>
+          </div>
         </div>
         <div class="recpanel">
           <div class="rechead">Record</div>
