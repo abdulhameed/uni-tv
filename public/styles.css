@@ -156,6 +156,8 @@ body.theater #player { width: 62%; }
 .variants:empty { display: none; }
 .controls { display: flex; gap: 6px; align-items: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .controls .spacer { flex: 1; }
+.volume { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; }
+.volume input[type=range] { width: 90px; accent-color: currentColor; cursor: pointer; }
 .icon { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; width: 36px; height: 34px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
 .icon:hover { border-color: #444a57; }
 #pFav.on { color: #ffc23d; }
@@ -276,3 +278,5 @@ body.theater #player { width: 62%; }
 .danger-zone { margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--line); }
 .danger-zone .row2 { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, 1fr); } .accgrid { grid-template-columns: 1fr; } }
+.screen.flash::after { content: ''; position: absolute; inset: 0; background: #fff; pointer-events: none; animation: shotflash .35s ease-out forwards; }
+@keyframes shotflash { from { opacity: .6; } to { opacity: 0; } }

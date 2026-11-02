@@ -1075,6 +1075,62 @@ $('#pQuality').onchange = (e) => { if (hls) hls.currentLevel = parseInt(e.target
 $('#pVariants').onclick = (e) => { const b = e.target.closest('[data-id]'); if (b) play(state.byId.get(b.dataset.id)); };
 video.addEventListener('dblclick', () => $('#pFull').click());
 
+// ---------- volume ----------
+video.volume = store.get('volume', 1);
+video.muted = store.get('muted', false);
+function syncVolume() {
+  const v = video.muted ? 0 : video.volume;
+  $('#pVol').value = v;
+  $('#pMute').textContent = v === 0 ? '🔇' : v < 0.5 ? '🔉' : '🔊';
+  $('#pMute').title = video.muted ? 'Unmute (M)' : 'Mute (M)';
+}
+function setVolume(v) {
+  video.volume = Math.min(1, Math.max(0, Math.round(v * 20) / 20));
+  video.muted = video.volume === 0;
+}
+video.addEventListener('volumechange', () => {
+  syncVolume();
+  store.set('volume', video.volume);
+  store.set('muted', video.muted);
+});
+$('#pVol').oninput = (e) => setVolume(parseFloat(e.target.value));
+$('#pMute').onclick = () => {
+  if (video.muted && video.volume === 0) video.volume = 0.5;
+  video.muted = !video.muted;
+};
+$('.screen').addEventListener('wheel', (e) => {
+  if (!state.current) return;
+  e.preventDefault();
+  setVolume((video.muted ? 0 : video.volume) + (e.deltaY < 0 ? 0.05 : -0.05));
+}, { passive: false });
+syncVolume();
+
+// ---------- screenshot ----------
+function screenshot() {
+  const c = state.current;
+  if (!c || video.readyState < 2 || !video.videoWidth) return toast('Wait for the channel to start playing first.');
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  try {
+    canvas.toBlob((blob) => {
+      if (!blob) return toast('Couldn’t capture this frame.');
+      const stamp = new Date().toISOString().slice(0, 19).replace('T', ' ').replace(/:/g, '.');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${c.name.replace(/[\\/:*?"<>|]+/g, '_')} ${stamp}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      const s = $('.screen'); s.classList.remove('flash'); void s.offsetWidth; s.classList.add('flash');
+      toast('Screenshot saved');
+    }, 'image/png');
+  } catch {
+    toast('This stream blocks screenshots (cross-origin video).', 4000);
+  }
+}
+$('#pShot').onclick = screenshot;
+
 // ---------- recording ----------
 const recorder = {
   active: null, // { mr, kind, id, file, started, bytes, queue, limitTimer }
@@ -1255,7 +1311,10 @@ document.addEventListener('keydown', (e) => {
   if (k === 'ArrowDown' || k === 'ArrowRight') { e.preventDefault(); zap(1); }
   else if (k === 'ArrowUp' || k === 'ArrowLeft') { e.preventDefault(); zap(-1); }
   else if (k === 'f') $('#pFull').click();
-  else if (k === 'm') video.muted = !video.muted;
+  else if (k === 'm') $('#pMute').click();
+  else if (k === 'p') screenshot();
+  else if (k === '+' || k === '=') setVolume(video.volume + 0.05);
+  else if (k === '-') setVolume(video.volume - 0.05);
   else if (k === 't') document.body.classList.toggle('theater');
   else if (k === 's') toggleFav(state.current.id);
   else if (k === 'r') recorder.toggle('video');
