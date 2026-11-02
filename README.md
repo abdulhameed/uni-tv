@@ -1,6 +1,8 @@
 # Uni TV
 
-Watch, curate, filter and record the channels in `Global TV.m3u`.
+Watch, curate, filter and record the channels in an M3U playlist.
+
+The playlist is not included. Put your own at `Global TV.m3u` in the project root, or point `PLAYLIST` at one (see below).
 
 ```
 npm start          # or: node server.js
