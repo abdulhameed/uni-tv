@@ -25,7 +25,7 @@ Options:
 - `TURNSTILE_SITE_KEY=… TURNSTILE_SECRET=…` adds a Cloudflare Turnstile human check, which is recommended if the app is reachable from the internet.
 - `GUEST_POSTING=1` lets people without an account chat and comment under a nickname.
 
-**Comments & live chat:** every channel has its own **live chat** (with a count of who's watching) and a **comments** section, as two tabs under the player. The **Live chat** tab is one room for everyone using this Uni TV. It shows who's online and what they're watching, and you can click a channel tag to watch along. Everyone picks a nickname, and there are no accounts. People can delete their own posts, and the host computer can delete anything. Everything is stored in `data/social.json`.
+**Comments & live chat:** every channel has its own **live chat** (with a count of who's watching) and a **comments** section, as two tabs under the player. The **Live chat** tab is one room for everyone using this Uni TV. It shows who's online and what they're watching, and you can click a channel tag to watch along. Posting needs an account, and posts from accounts show a ✓. With `GUEST_POSTING=1`, people without an account can post under a nickname. People can delete their own posts, and the host computer can delete anything. Messages and comments are stored in `data/social.json`.
 
 **Sharing:** the ↗ button in the player gives you a link to the channel, a one-channel `.m3u` file for VLC/IINA, and the raw stream URL. Start with `LAN=1 npm start` and friends on the same Wi‑Fi can open the link and watch. Guests can't see or change your recordings. Note that LAN mode also lets anyone on that network stream through your computer, so use it only on networks you trust.
 
@@ -35,6 +35,6 @@ Options:
 - **Scan streams**: checks every stream in the background. Results are saved in `data/health.json`.
 - **Record**: records the playing channel as video or audio only. You can stop it yourself or set it to stop after a set time. Files go to `recordings/` and show up in the Recordings tab.
 
-Keyboard: `/` search · `↑/↓` change channel · `f` fullscreen · `t` theater · `m` mute · `s` favorite · `r` record video · `a` record audio · `Esc` close player.
+Keyboard: `/` search · `↑/↓` change channel · `f` fullscreen · `t` theater · `m` mute · `+`/`-` volume · `p` screenshot · `s` favorite · `r` record video · `a` record audio · `Esc` close player.
 
 Use `PLAYLIST=/path/to/other.m3u npm start` to load a different playlist and `PORT=8080` to use another port.
